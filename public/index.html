@@ -111,6 +111,17 @@
                             <div id="student-submissions-area" class="w-full p-4 rounded-lg bg-gray-50 border min-h-[100px] whitespace-pre-wrap"><p class="text-gray-400">Sentences submitted by the student will appear here.</p></div>
                             <textarea id="copy-helper" class="absolute -left-full"></textarea>
                         </div>
+                        <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
+                            <h2 class="text-xl font-bold text-gray-700">Prompt Customization</h2>
+                            <div class="space-y-2">
+                                <label for="guided-prompt-input" class="block text-sm font-medium text-gray-700">Guided Mode Prompt</label>
+                                <textarea id="guided-prompt-input" rows="6" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+                            </div>
+                             <div class="space-y-2">
+                                <label for="advanced-prompt-input" class="block text-sm font-medium text-gray-700">Advanced Mode Prompt</label>
+                                <textarea id="advanced-prompt-input" rows="6" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+                            </div>
+                        </div>
                     </div>
                     <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
                         <h2 class="text-xl font-bold text-gray-700">Past Sessions</h2>
@@ -177,12 +188,19 @@
             const advancedModeToggle = document.getElementById('advanced-mode-toggle');
             const saveSessionButton = document.getElementById('save-session-button');
             const pastSessionsList = document.getElementById('past-sessions-list');
+            const guidedPromptInput = document.getElementById('guided-prompt-input');
+            const advancedPromptInput = document.getElementById('advanced-prompt-input');
             const modal = document.getElementById('modal'), modalMessage = document.getElementById('modal-message'), modalClose = document.getElementById('modal-close');
+
+            const defaultGuidedPrompt = `You are an expert in linguistics and special education, specializing in creating versatile sentence-building exercises. Your task is to take a user-provided prompt and transform it into a template that allows a student to construct at least two or three different, complete sentences. Your output must be a JSON object that strictly follows this schema: \`{\"wordGroups\": [[\"word1\", \"word2\"], [\"next_word\"], ...]}\`. Key Instructions: 1. Vocabulary Level: The vocabulary used must be appropriate for a **\${gradeLevel}** student. 2. Provide Rich Alternatives: For each word group, provide 2-4 reasonable alternatives. The total number of words in a group must not exceed 5. Avoid single-word groups unless it's for an article like 'a' or 'the' where alternatives are not sensible. 3. Enable Multiple Sentences: The combination of word groups should allow for the creation of multiple distinct sentences. 4. No Punctuation: Do NOT include punctuation like periods or commas as items in the arrays.`;
+            const defaultAdvancedPrompt = `You are an expert in linguistics and special education. Your task is to take a user-provided prompt and break it down into groups based on parts of speech. The output must be a JSON object. The keys of the object should be parts of speech (nouns, pronouns, articles, verbs, adjectives, punctuation). The values should be one array of 2-5 related words for each part of speech. **Crucially, ensure you provide a list of words for every part of speech listed in the schema, even if the list is short.** The vocabulary used must be appropriate for a **\${gradeLevel}** student. Always include a "punctuation" group with "." and "?".`;
 
             let state = {
                 sentenceTemplate: [["The", "A"], ["cat", "dog", "fox"], ["sat", "ran"], ["on", "under"], ["the"], ["mat", "log"]],
                 composedSentence: [], currentGroupIndex: 0, studentSubmissions: [],
-                currentUser: null, currentSessionId: null, mode: 'guided' // 'guided' or 'advanced'
+                currentUser: null, currentSessionId: null, mode: 'guided',
+                guidedSystemPrompt: defaultGuidedPrompt,
+                advancedSystemPrompt: defaultAdvancedPrompt
             };
 
             // --- AUTHENTICATION ---
@@ -210,7 +228,10 @@
             });
             
             function initialize() {
-                switchTab('student'); render();
+                switchTab('student'); 
+                guidedPromptInput.value = state.guidedSystemPrompt;
+                advancedPromptInput.value = state.advancedSystemPrompt;
+                render();
                 studentTabButton.addEventListener('click', () => switchTab('student'));
                 instructorTabButton.addEventListener('click', () => switchTab('instructor'));
                 xButton.addEventListener('click', resetCurrentSentence);
@@ -488,7 +509,9 @@
                     submissions: state.studentSubmissions,
                     userId: state.currentUser.uid,
                     createdAt: new Date(),
-                    mode: state.mode
+                    mode: state.mode,
+                    guidedSystemPrompt: guidedPromptInput.value,
+                    advancedSystemPrompt: advancedPromptInput.value
                 };
 
                 try {
@@ -532,6 +555,12 @@
                 promptInput.value = session.prompt;
                 state.mode = session.mode || 'guided';
                 advancedModeToggle.checked = state.mode === 'advanced';
+                
+                state.guidedSystemPrompt = session.guidedSystemPrompt || defaultGuidedPrompt;
+                state.advancedSystemPrompt = session.advancedSystemPrompt || defaultAdvancedPrompt;
+                guidedPromptInput.value = state.guidedSystemPrompt;
+                advancedPromptInput.value = state.advancedSystemPrompt;
+
                 try {
                     state.sentenceTemplate = typeof session.template === 'string' ? JSON.parse(session.template) : session.template;
                 } catch (e) {
@@ -576,6 +605,7 @@
             function getPromptConfig(mode) {
                 const gradeLevel = vocabLevelLabel.textContent;
                 if (mode === 'advanced') {
+                    let promptText = advancedPromptInput.value || defaultAdvancedPrompt;
                     return {
                         schema: {
                             type: "OBJECT",
@@ -588,13 +618,14 @@
                                 "punctuation": { "type": "ARRAY", "items": { "type": "STRING" } },
                             },
                         },
-                        systemPrompt: `You are an expert in linguistics and special education. Your task is to take a user-provided prompt and break it down into groups based on parts of speech. The output must be a JSON object. The keys of the object should be parts of speech (nouns, pronouns, articles, verbs, adjectives, punctuation). The values should be arrays of 2-5 related words. **Crucially, ensure you provide a list of words for every part of speech listed in the schema, even if the list is short.** The vocabulary used must be appropriate for a **${gradeLevel}** student. Always include a "punctuation" group with "." and "?".`
+                        systemPrompt: promptText.replace(/\$\{gradeLevel\}/g, gradeLevel)
                     };
                 }
                 // Default to guided mode
+                let promptText = guidedPromptInput.value || defaultGuidedPrompt;
                 return {
                     schema: { type: "OBJECT", properties: { "wordGroups": { "type": "ARRAY", "items": { "type": "ARRAY", "items": { "type": "STRING" } } } }, required: ["wordGroups"] },
-                    systemPrompt: `You are an expert in linguistics and special education, specializing in creating versatile sentence-building exercises. Your task is to take a user-provided prompt and transform it into a template that allows a student to construct at least two or three different, complete sentences. Your output must be a JSON object that strictly follows this schema: \`{\"wordGroups\": [[\"word1\", \"word2\"], [\"next_word\"], ...]}\`. Key Instructions: 1. Vocabulary Level: The vocabulary used must be appropriate for a **${gradeLevel}** student. 2. Provide Rich Alternatives: For each word group, provide 2-4 reasonable alternatives. The total number of words in a group must not exceed 5. Avoid single-word groups unless it's for an article like 'a' or 'the' where alternatives are not sensible. 3. Enable Multiple Sentences: The combination of word groups should allow for the creation of multiple distinct sentences. 4. No Punctuation: Do NOT include punctuation like periods or commas as items in the arrays.`
+                    systemPrompt: promptText.replace(/\$\{gradeLevel\}/g, gradeLevel)
                 };
             }
 
