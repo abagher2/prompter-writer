@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentence Builder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; overscroll-behavior: none; }
+        .tab-button.active { border-color: #4f46e5; background-color: #eef2ff; color: #4f46e5; font-weight: 600; }
+        .sentence-box { min-height: 150px; border: 2px dashed #d1d5db; transition: background-color 0.3s; }
+        .sentence-box.drag-over { background-color: #dbeafe; border-color: #60a5fa; }
+        .word-token { touch-action: none; cursor: grab; user-select: none; transition: transform 0.2s ease-in-out, box-shadow 0.2s, opacity 0.2s; }
+        .word-token:active { cursor: grabbing; }
+        .word-token.dragging { opacity: 0.5; transform: scale(1.1); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+        .word-bank { min-height: 100px; display: flex; gap: 0.75rem; padding: 1rem; background-color: #e0e7ff; border-radius: 0.75rem; overflow-x: auto; }
+        .word-group { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; background-color: #c7d2fe; border-radius: 0.5rem; flex-shrink: 0; transition: background-color 0.3s, border-color 0.3s; }
+        .word-group.active { background-color: #a5b4fc; border: 2px solid #6366f1; }
+        .word-group .word-token.disabled { cursor: not-allowed; background-color: #e5e7eb; color: #9ca3af; opacity: 0.7; }
+        .trash-can { transition: transform 0.3s, color 0.3s, opacity 0.3s; opacity: 0; transform: scale(0.8); pointer-events: none; }
+        .trash-can.visible { opacity: 1; transform: scale(1); pointer-events: all; }
+        .trash-can.drag-over { transform: scale(1.25); color: #ef4444; }
+        .template-grid { display: flex; gap: 0.5rem; padding: 1rem; background-color: #f3f4f6; border-radius: 0.5rem; overflow-x: auto; }
+        .template-group { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.75rem; background-color: #eef2ff; border: 1px solid #c7d2fe; border-radius: 0.5rem; }
+        .template-word-wrapper { position: relative; }
+        .template-word-input { background-color: white; border: 1px solid #d1d5db; border-radius: 0.375rem; padding: 0.5rem 0.75rem; font-weight: 500; text-align: center; min-width: 100px; }
+        .template-word-input:focus { outline: 2px solid #4f46e5; border-color: transparent; }
+        .remove-word-btn { position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; background-color: #ef4444; color: white; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; font-weight: bold; cursor: pointer; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: transform 0.2s; }
+        .remove-word-btn:hover { transform: scale(1.1); }
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 50; }
+        .modal-content { background-color: white; padding: 2rem; border-radius: 0.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); max-width: 90%; width: 500px; text-align: center; }
+        .session-item { cursor: pointer; transition: background-color 0.2s; }
+        .session-item:hover { background-color: #eef2ff; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div id="app-container" class="max-w-5xl mx-auto p-4 md:p-6">
+        <!-- Auth View -->
+        <div id="auth-view" class="text-center py-20">
+            <h1 class="text-3xl font-bold text-gray-800 mb-4">Welcome to Sentence Builder</h1>
+            <p class="text-gray-600 mb-8">Please sign in with Google to begin.</p>
+            <button id="login-button" class="bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg hover:bg-indigo-700 transition inline-flex items-center gap-2">
+                <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691c-1.229 2.525-1.927 5.388-1.927 8.419c0 3.031.698 5.894 1.927 8.419l-5.657 5.657C.923 34.421 0 29.358 0 24c0-5.358.923-10.421 2.545-14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-5.657-5.657C30.074 35.083 27.218 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-5.657 5.657C9.033 40.573 15.999 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083L48 24c0 0 0 .1 0 .1c0 12.15-9.85 22-22 22h-2C12.955 46 4 37.045 4 26v-4c0-11.045 8.955-20 20-20c5.358 0 10.421.923 14.691 2.545l-5.657 5.657C31.842 9.154 28.059 8 25 8c-6.627 0-12 5.373-12 12s5.373 12 12 12c5.223 0 9.651-3.357 11.303-8H25v-8h18.611z"/></svg>
+                Sign In with Google
+            </button>
+        </div>
+
+        <!-- Main App View -->
+        <div id="main-app" class="hidden">
+            <header class="flex justify-between items-center mb-6">
+                <div id="user-info" class="text-sm text-gray-600"></div>
+                <button id="logout-button" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Logout</button>
+            </header>
+            <div class="border-b border-gray-200">
+                <nav class="-mb-px flex space-x-4" aria-label="Tabs">
+                    <button id="student-tab-button" class="tab-button whitespace-nowrap py-3 px-4 border-b-2 font-medium text-sm rounded-t-lg">Student</button>
+                    <button id="instructor-tab-button" class="tab-button whitespace-nowrap py-3 px-4 border-b-2 font-medium text-sm rounded-t-lg">Instructor</button>
+                </nav>
+            </div>
+            <main class="mt-6">
+                <!-- Student View -->
+                <div id="student-view">
+                    <div class="bg-white p-6 rounded-xl shadow-md space-y-6">
+                        <div class="flex justify-between items-start">
+                            <h1 class="text-xl font-bold text-gray-700">Compose Your Sentence</h1>
+                            <div id="student-trash-can" class="trash-can text-gray-400">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </div>
+                        </div>
+                        <div id="sentence-box" class="sentence-box w-full p-4 rounded-lg bg-gray-50 flex flex-wrap gap-2 items-center"></div>
+                        <div class="flex justify-end items-center space-x-3">
+                            <button id="speak-button" class="p-3 bg-blue-500 text-white rounded-full shadow hover:bg-blue-600 transition disabled:bg-gray-300 disabled:cursor-not-allowed"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9 9 0 0119 10a9 9 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7 7 0 0017 10a7 7 0 00-2.343-5.657 1 1 0 010-1.414zm-2.828 2.828a1 1 0 011.414 0A5 5 0 0115 10a5 5 0 01-1.757 3.536 1 1 0 11-1.414-1.414A3 3 0 0013 10a3 3 0 00-1.172-2.475 1 1 0 010-1.414z" clip-rule="evenodd" /></svg></button>
+                            <button id="x-button" class="p-3 bg-red-500 text-white rounded-full shadow hover:bg-red-600 transition"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                            <button id="check-button" class="p-3 bg-green-500 text-white rounded-full shadow hover:bg-green-600 transition"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg></button>
+                        </div>
+                    </div>
+                    <div id="word-bank" class="word-bank mt-6 shadow-md"></div>
+                    <div id="completion-message" class="hidden text-center mt-6 p-4 bg-green-100 text-green-700 rounded-lg"><p class="font-semibold">Great job! You've completed the sentence.</p><p>You can use the ✓ button to save it, or the X button to start over.</p></div>
+                </div>
+
+                <!-- Instructor View -->
+                <div id="instructor-view" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-2 space-y-8">
+                        <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
+                            <h1 class="text-xl font-bold text-gray-700">Create & Edit Sentence Template</h1>
+                            <p class="text-gray-600">Enter a prompt. The AI will generate an editable word bank below.</p>
+                            <div><label for="prompt-input" class="block text-sm font-medium text-gray-700">Prompt:</label><textarea id="prompt-input" rows="4" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="e.g., The quick brown fox jumps over the lazy dog."></textarea></div>
+                            <div class="space-y-2"><label for="vocab-slider" class="block text-sm font-medium text-gray-700">Vocabulary Level: <span id="vocab-level-label" class="font-bold text-indigo-600">1st Grade</span></label><input id="vocab-slider" type="range" min="1" max="5" value="1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"></div>
+                            <div class="flex items-center justify-end space-x-4">
+                                <div id="loading-indicator" class="hidden"><svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+                                <button id="generate-button" class="px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition">Generate Template</button>
+                                <button id="save-session-button" class="px-5 py-2.5 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition">Save Session</button>
+                            </div>
+                            <div id="template-display-area" class="mt-4"></div>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
+                            <div class="flex justify-between items-center"><h2 class="text-xl font-bold text-gray-700">Student Submissions</h2><button id="copy-button" class="px-4 py-2 bg-gray-600 text-white text-sm font-semibold rounded-lg shadow hover:bg-gray-700 transition disabled:bg-gray-300">Copy Text</button></div>
+                            <div id="student-submissions-area" class="w-full p-4 rounded-lg bg-gray-50 border min-h-[100px] whitespace-pre-wrap"><p class="text-gray-400">Sentences submitted by the student will appear here.</p></div>
+                            <textarea id="copy-helper" class="absolute -left-full"></textarea>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
+                        <h2 class="text-xl font-bold text-gray-700">Past Sessions</h2>
+                        <div id="past-sessions-list" class="space-y-2 max-h-96 overflow-y-auto">
+                            <p class="text-gray-500 text-sm">No sessions saved yet.</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <div id="modal" class="modal-backdrop hidden"><div class="modal-content"><p id="modal-message" class="text-lg text-gray-700"></p><button id="modal-close" class="mt-6 px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700">OK</button></div></div>
+
+    <script type="module">
+        // Firebase Imports
+        import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        // BEGIN - Firebase Configuration
+        import { initializeApp } from "firebase/app";
+        import { getAnalytics } from "firebase/analytics";
+        // TODO: Add SDKs for Firebase products that you want to use
+        // https://firebase.google.com/docs/web/setup#available-libraries
+
+        // Your web app's Firebase configuration
+        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+        const firebaseConfig = {
+        apiKey: "AIzaSyBucFH_kzZBQ5wD7eJTDw1x9eihyQ1yXkI",
+        authDomain: "gen-lang-client-0084437699.firebaseapp.com",
+        projectId: "gen-lang-client-0084437699",
+        storageBucket: "gen-lang-client-0084437699.firebasestorage.app",
+        messagingSenderId: "315303957379",
+        appId: "1:315303957379:web:b0ab75590db544251d5cb6",
+        measurementId: "G-0CXH9FDMKF"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+
+        // END - Firebase Configuration
+
+        // Initialize Firebase
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const provider = new GoogleAuthProvider();
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM Elements
+            const authView = document.getElementById('auth-view'), mainApp = document.getElementById('main-app');
+            const loginButton = document.getElementById('login-button'), logoutButton = document.getElementById('logout-button');
+            const userInfo = document.getElementById('user-info');
+            const studentView = document.getElementById('student-view'), instructorView = document.getElementById('instructor-view');
+            const studentTabButton = document.getElementById('student-tab-button'), instructorTabButton = document.getElementById('instructor-tab-button');
+            const sentenceBox = document.getElementById('sentence-box'), wordBank = document.getElementById('word-bank');
+            const studentTrashCan = document.getElementById('student-trash-can');
+            const speakButton = document.getElementById('speak-button'), xButton = document.getElementById('x-button'), checkButton = document.getElementById('check-button');
+            const completionMessage = document.getElementById('completion-message');
+            const generateButton = document.getElementById('generate-button'), promptInput = document.getElementById('prompt-input');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const templateDisplayArea = document.getElementById('template-display-area');
+            const studentSubmissionsArea = document.getElementById('student-submissions-area');
+            const copyButton = document.getElementById('copy-button'), copyHelper = document.getElementById('copy-helper');
+            const vocabSlider = document.getElementById('vocab-slider'), vocabLevelLabel = document.getElementById('vocab-level-label');
+            const saveSessionButton = document.getElementById('save-session-button');
+            const pastSessionsList = document.getElementById('past-sessions-list');
+            const modal = document.getElementById('modal'), modalMessage = document.getElementById('modal-message'), modalClose = document.getElementById('modal-close');
+
+            let state = {
+                sentenceTemplate: [["The", "A"], ["cat", "dog", "fox"], ["sat", "ran"], ["on", "under"], ["the"], ["mat", "log"]],
+                composedSentence: [], currentGroupIndex: 0, studentSubmissions: [],
+                currentUser: null, currentSessionId: null,
+            };
+
+            // --- AUTHENTICATION ---
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    state.currentUser = user;
+                    authView.classList.add('hidden');
+                    mainApp.classList.remove('hidden');
+                    userInfo.textContent = `Signed in as ${user.displayName}`;
+                    initialize();
+                    listenForSessions();
+                } else {
+                    state.currentUser = null;
+                    authView.classList.remove('hidden');
+                    mainApp.classList.add('hidden');
+                }
+            });
+
+            loginButton.addEventListener('click', () => {
+                signInWithPopup(auth, provider).catch(error => console.error("Login failed:", error));
+            });
+
+            logoutButton.addEventListener('click', () => {
+                signOut(auth).catch(error => console.error("Logout failed:", error));
+            });
+            
+            function initialize() {
+                switchTab('student'); render();
+                studentTabButton.addEventListener('click', () => switchTab('student'));
+                instructorTabButton.addEventListener('click', () => switchTab('instructor'));
+                xButton.addEventListener('click', resetCurrentSentence);
+                checkButton.addEventListener('click', handleCheckSentence);
+                speakButton.addEventListener('click', speakSentence);
+                generateButton.addEventListener('click', handleGenerateTemplate);
+                copyButton.addEventListener('click', handleCopySubmissions);
+                vocabSlider.addEventListener('input', updateVocabLabel);
+                saveSessionButton.addEventListener('click', saveSession);
+                modalClose.addEventListener('click', hideModal);
+                sentenceBox.addEventListener('dragover', e => { e.preventDefault(); sentenceBox.classList.add('drag-over'); });
+                sentenceBox.addEventListener('dragleave', () => sentenceBox.classList.remove('drag-over'));
+                sentenceBox.addEventListener('drop', handleDropToSentenceBox);
+                studentTrashCan.addEventListener('dragover', e => { e.preventDefault(); studentTrashCan.classList.add('drag-over'); });
+                studentTrashCan.addEventListener('dragleave', () => studentTrashCan.classList.remove('drag-over'));
+                studentTrashCan.addEventListener('drop', handleDropToStudentTrash);
+            }
+            
+            function render() {
+                renderSentenceBox(); renderWordBank(); renderInstructorTemplate(); renderStudentSubmissions(); updateUIState();
+            }
+
+            // --- RENDER FUNCTIONS (Unchanged from previous version) ---
+            function renderSentenceBox() {
+                sentenceBox.innerHTML = '';
+                if (state.composedSentence.length === 0) {
+                     sentenceBox.innerHTML = '<p class="text-gray-400">Drag words from the bank below to start.</p>';
+                } else {
+                    state.composedSentence.forEach((word, index) => {
+                        const wordEl = createWordToken(word.text, `composed-${word.id}`, true, false);
+                        wordEl.dataset.wordIndex = index;
+                        sentenceBox.appendChild(wordEl);
+                    });
+                }
+            }
+
+            function renderWordBank() {
+                wordBank.innerHTML = '';
+                completionMessage.classList.add('hidden');
+                wordBank.classList.remove('hidden');
+
+                if (state.currentGroupIndex >= state.sentenceTemplate.length) {
+                    wordBank.classList.add('hidden');
+                    completionMessage.classList.remove('hidden');
+                    return;
+                }
+
+                state.sentenceTemplate.forEach((group, groupIndex) => {
+                    const groupEl = document.createElement('div');
+                    groupEl.className = 'word-group';
+                    const isGroupActive = groupIndex === state.currentGroupIndex;
+                    if (isGroupActive) groupEl.classList.add('active');
+
+                    group.forEach(wordText => {
+                        const wordEl = createWordToken(wordText, `bank-${wordText}-${groupIndex}`, isGroupActive, !isGroupActive);
+                        groupEl.appendChild(wordEl);
+                    });
+                    wordBank.appendChild(groupEl);
+                });
+            }
+
+            function renderInstructorTemplate() {
+                templateDisplayArea.innerHTML = '';
+                if(state.sentenceTemplate.length === 0) return;
+                const grid = document.createElement('div'); grid.className = 'template-grid';
+                state.sentenceTemplate.forEach((group, groupIndex) => {
+                    const groupEl = document.createElement('div'); groupEl.className = 'template-group';
+                    group.forEach((word, wordIndex) => {
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'template-word-wrapper';
+
+                        const input = document.createElement('input');
+                        input.type = 'text'; input.value = word; input.className = 'template-word-input';
+                        input.addEventListener('change', (e) => { state.sentenceTemplate[groupIndex][wordIndex] = e.target.value; });
+                        
+                        const removeBtn = document.createElement('button');
+                        removeBtn.innerHTML = '&times;';
+                        removeBtn.className = 'remove-word-btn';
+                        removeBtn.title = 'Remove word';
+                        removeBtn.addEventListener('click', () => handleRemoveInstructorWord(groupIndex, wordIndex));
+
+                        wrapper.appendChild(input);
+                        wrapper.appendChild(removeBtn);
+                        groupEl.appendChild(wrapper);
+                    });
+                    grid.appendChild(groupEl);
+                });
+                templateDisplayArea.appendChild(grid);
+            }
+
+            function handleRemoveInstructorWord(groupIndex, wordIndex) {
+                state.sentenceTemplate[groupIndex].splice(wordIndex, 1);
+                if (state.sentenceTemplate[groupIndex].length === 0) {
+                    state.sentenceTemplate.splice(groupIndex, 1);
+                }
+                render();
+            }
+
+            function renderStudentSubmissions() {
+                studentSubmissionsArea.innerHTML = state.studentSubmissions.length === 0
+                    ? '<p class="text-gray-400">Sentences submitted by the student will appear here.</p>'
+                    : state.studentSubmissions.join('\n');
+                copyButton.disabled = state.studentSubmissions.length === 0;
+            }
+            
+            function createWordToken(text, id, isDraggable, isDisabled) {
+                const el = document.createElement('div');
+                el.id = id; el.textContent = text;
+                el.className = 'word-token bg-white px-4 py-2 rounded-lg shadow-md border border-gray-200 text-lg font-medium';
+                el.draggable = isDraggable;
+                if (isDisabled) el.classList.add('disabled');
+                el.addEventListener('dragstart', handleStudentWordDragStart);
+                el.addEventListener('dragend', handleStudentWordDragEnd);
+                return el;
+            }
+
+            function updateUIState() {
+                const hasSentence = state.composedSentence.length > 0;
+                speakButton.disabled = !hasSentence; checkButton.disabled = !hasSentence; xButton.disabled = !hasSentence;
+            }
+
+            function switchTab(tabName) {
+                studentView.classList.toggle('hidden', tabName !== 'student');
+                instructorView.classList.toggle('hidden', tabName === 'student');
+                studentTabButton.classList.toggle('active', tabName === 'student');
+                instructorTabButton.classList.toggle('active', tabName !== 'student');
+                render();
+            }
+
+            function resetCurrentSentence() {
+                state.composedSentence = []; state.currentGroupIndex = 0; render();
+            }
+
+            function handleCheckSentence() {
+                if (state.composedSentence.length > 0) {
+                    const sentenceText = state.composedSentence.map(w => w.text).join(' ') + '.';
+                    state.studentSubmissions.push(sentenceText);
+                    resetCurrentSentence();
+                    renderStudentSubmissions();
+                }
+            }
+
+            function speakSentence() {
+                if ('speechSynthesis' in window && state.composedSentence.length > 0) {
+                    const textToSpeak = state.composedSentence.map(w => w.text).join(' ');
+                    speechSynthesis.speak(new SpeechSynthesisUtterance(textToSpeak));
+                } else { showModal('Sorry, your browser does not support text-to-speech.'); }
+            }
+
+            function handleCopySubmissions() {
+                if (!studentSubmissionsArea.textContent || state.studentSubmissions.length === 0) return;
+                copyHelper.value = studentSubmissionsArea.textContent; copyHelper.select();
+                try { document.execCommand('copy'); showModal('Copied to clipboard!'); } catch (err) { showModal('Failed to copy text.'); }
+                copyHelper.value = '';
+            }
+            
+            function handleStudentWordDragStart(e) {
+                e.dataTransfer.setData('text/plain', e.target.textContent);
+                e.dataTransfer.effectAllowed = 'move';
+                setTimeout(() => e.target.classList.add('dragging'), 0);
+                if (e.target.id.startsWith('composed-')) {
+                    e.dataTransfer.setData('source', 'sentence-box');
+                    e.dataTransfer.setData('wordIndex', e.target.dataset.wordIndex);
+                    studentTrashCan.classList.add('visible');
+                } else {
+                    e.dataTransfer.setData('source', 'word-bank');
+                }
+            }
+            
+            function handleStudentWordDragEnd(e) {
+                e.target.classList.remove('dragging');
+                studentTrashCan.classList.remove('visible', 'drag-over');
+            }
+
+            function handleDropToSentenceBox(e) {
+                e.preventDefault();
+                sentenceBox.classList.remove('drag-over');
+                if (e.dataTransfer.getData('source') === 'word-bank') {
+                    const wordText = e.dataTransfer.getData('text/plain');
+                    state.composedSentence.push({ id: crypto.randomUUID(), text: wordText });
+                    state.currentGroupIndex++;
+                    render();
+                }
+            }
+
+            function handleDropToStudentTrash(e) {
+                e.preventDefault();
+                if (e.dataTransfer.getData('source') === 'sentence-box') {
+                    const wordIndex = parseInt(e.dataTransfer.getData('wordIndex'), 10);
+                    state.composedSentence = state.composedSentence.slice(0, wordIndex);
+                    state.currentGroupIndex = wordIndex;
+                    render();
+                }
+            }
+
+            function updateVocabLabel() {
+                const levels = { '1': '1st Grade', '2': '2nd Grade', '3': '3rd Grade', '4': '4th Grade', '5': '5th Grade' };
+                vocabLevelLabel.textContent = levels[vocabSlider.value];
+            }
+
+            // --- FIREBASE & SESSION MANAGEMENT ---
+            async function saveSession() {
+                if (!state.currentUser) {
+                    showModal("You must be logged in to save a session.");
+                    return;
+                }
+                const sessionData = {
+                    prompt: promptInput.value,
+                    template: state.sentenceTemplate,
+                    submissions: state.studentSubmissions,
+                    userId: state.currentUser.uid,
+                    createdAt: new Date()
+                };
+
+                try {
+                    if (state.currentSessionId) {
+                        // Update existing session
+                        const sessionRef = doc(db, "sessions", state.currentSessionId);
+                        await setDoc(sessionRef, sessionData, { merge: true });
+                        showModal("Session updated successfully!");
+                    } else {
+                        // Create new session
+                        const docRef = await addDoc(collection(db, "sessions"), sessionData);
+                        state.currentSessionId = docRef.id;
+                        showModal("Session saved successfully!");
+                    }
+                } catch (e) {
+                    console.error("Error saving session: ", e);
+                    showModal("Error: Could not save session.");
+                }
+            }
+
+            function listenForSessions() {
+                if (!state.currentUser) return;
+                const q = query(collection(db, "sessions"), where("userId", "==", state.currentUser.uid));
+                
+                onSnapshot(q, (querySnapshot) => {
+                    const sessions = [];
+                    querySnapshot.forEach((doc) => {
+                        sessions.push({ id: doc.id, ...doc.data() });
+                    });
+                    renderPastSessions(sessions);
+                });
+            }
+
+            function renderPastSessions(sessions) {
+                pastSessionsList.innerHTML = '';
+                if (sessions.length === 0) {
+                    pastSessionsList.innerHTML = '<p class="text-gray-500 text-sm">No sessions saved yet.</p>';
+                    return;
+                }
+                sessions.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
+                sessions.forEach(session => {
+                    const sessionEl = document.createElement('div');
+                    sessionEl.className = 'session-item p-3 border rounded-lg';
+                    sessionEl.innerHTML = `
+                        <p class="font-semibold truncate">${session.prompt || 'Untitled Session'}</p>
+                        <p class="text-xs text-gray-500">${session.createdAt.toDate().toLocaleString()}</p>
+                    `;
+                    sessionEl.addEventListener('click', () => loadSession(session));
+                    pastSessionsList.appendChild(sessionEl);
+                });
+            }
+
+            function loadSession(session) {
+                promptInput.value = session.prompt;
+                state.sentenceTemplate = session.template;
+                state.studentSubmissions = session.submissions;
+                state.currentSessionId = session.id;
+                resetCurrentSentence(); // This will call render()
+                showModal(`Session "${session.prompt || 'Untitled'}" loaded.`);
+            }
+
+            // --- GEMINI API (Unchanged) ---
+            async function handleGenerateTemplate() {
+                const prompt = promptInput.value.trim();
+                if (!prompt) { showModal("Please enter a prompt for the AI."); return; }
+                loadingIndicator.classList.remove('hidden'); generateButton.disabled = true;
+                
+                const schema = { type: "OBJECT", properties: { "wordGroups": { "type": "ARRAY", "items": { "type": "ARRAY", "items": { "type": "STRING" } } } }, required: ["wordGroups"] };
+                const gradeLevel = vocabLevelLabel.textContent;
+                
+                const systemPrompt = `You are an expert in linguistics and special education, specializing in creating versatile sentence-building exercises. Your task is to take a user-provided prompt and transform it into a template that allows a student to construct at least two or three different, complete sentences. Your output must be a JSON object that strictly follows this schema: \`{\"wordGroups\": [[\"word1\", \"word2\"], [\"next_word\"], ...]}\`. Key Instructions: 1. Vocabulary Level: The vocabulary used must be appropriate for a **${gradeLevel}** student. 2. Provide Rich Alternatives: For each word group, provide 2-4 reasonable alternatives. The total number of words in a group must not exceed 5. Avoid single-word groups unless it's for an article like 'a' or 'the' where alternatives are not sensible. 3. Enable Multiple Sentences: The combination of word groups should allow for the creation of multiple distinct sentences. 4. No Punctuation: Do NOT include punctuation like periods or commas as items in the arrays.`;
+
+                try {
+                    const apiKey = ""; // Use environment-injected key
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                    const payload = { contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\nUser Prompt: " + prompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: schema } };
+                    const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+                    const result = await response.json();
+                    if (result.candidates && result.candidates[0].content.parts[0].text) {
+                        const parsedJson = JSON.parse(result.candidates[0].content.parts[0].text);
+                        if (parsedJson.wordGroups && Array.isArray(parsedJson.wordGroups)) {
+                            state.sentenceTemplate = parsedJson.wordGroups;
+                            state.currentSessionId = null; // New template means it's a new session
+                            state.studentSubmissions = []; // Clear submissions for new template
+                            resetCurrentSentence();
+                            showModal("New sentence template created and is now editable.");
+                        } else { throw new Error("Invalid data structure received from AI."); }
+                    } else { throw new Error("Could not generate a valid template from the prompt."); }
+                } catch (error) {
+                    console.error("Error generating template:", error);
+                    showModal(`An error occurred: ${error.message}`);
+                } finally {
+                    loadingIndicator.classList.add('hidden'); generateButton.disabled = false;
+                }
+            }
+
+            function showModal(message) { modalMessage.textContent = message; modal.classList.remove('hidden'); }
+            function hideModal() { modal.classList.add('hidden'); }
+        });
+    </script>
+</body>
+</html>
