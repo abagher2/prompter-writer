@@ -193,25 +193,13 @@
             const modal = document.getElementById('modal'), modalMessage = document.getElementById('modal-message'), modalClose = document.getElementById('modal-close');
 
             const defaultGuidedPrompt = `You are an expert in linguistics and special education, specializing in creating versatile sentence-building exercises. Your task is to take a user-provided prompt and transform it into a template that allows a student to construct at least two or three different, complete sentences. Your output must be a JSON object that strictly follows this schema: \`{\"wordGroups\": [[\"word1\", \"word2\"], [\"next_word\"], ...]}\`. Key Instructions: 1. Vocabulary Level: The vocabulary used must be appropriate for a **\${gradeLevel}** student. 2. Provide Rich Alternatives: For each word group, provide 2-4 reasonable alternatives. The total number of words in a group must not exceed 5. Avoid single-word groups unless it's for an article like 'a' or 'the' where alternatives are not sensible. 3. Enable Multiple Sentences: The combination of word groups should allow for the creation of multiple distinct sentences. 4. No Punctuation: Do NOT include punctuation like periods or commas as items in the arrays.`;
-            const defaultAdvancedPrompt = `You are an expert in linguistics and special education. Your task is to take a user-provided subject and generate a JSON object containing lists of words related to that subject, categorized by their part of speech.
-
-**CRITICAL INSTRUCTIONS:**
-1.  **Output Format:** Your output **MUST** be a single, valid JSON object. Do not include any text or explanations outside of the JSON.
-2.  **JSON Structure:** The JSON object must have the following keys, exactly as written: "nouns", "pronouns", "articles", "verbs", "adjectives", "adverbs", and "punctuation". The value for each key must be an array of strings.
-3.  **Fill All Categories:** You **MUST** provide a list of 5-10 words for **EVERY** part of speech. If relevant words are scarce for a category, provide common, general-purpose words.
-4.  **Vocabulary Level:** All words must be appropriate for a **\${gradeLevel}** student.
-5.  **Punctuation:** The "punctuation" array should always include at least ".", ",", and "?".
-
-**Example Output Structure:**
-{
-  "nouns": ["dog", "park", "ball", "leash", "friend"],
-  "pronouns": ["he", "she", "it", "they", "we"],
-  "articles": ["a", "an", "the"],
-  "verbs": ["run", "jump", "play", "catch", "wag"],
-  "adjectives": ["happy", "big", "brown", "fast", "sunny"],
-  "adverbs": ["quickly", "happily", "slowly", "eagerly", "loudly"],
-  "punctuation": [".", ",", "?", "!"]
-}`;
+            const defaultAdvancedPrompt = `Your task is to generate a single, valid JSON object based on a user's subject.
+The JSON object must contain these exact keys: "nouns", "pronouns", "articles", "verbs", "adjectives", "adverbs", "punctuation".
+The value for each key must be an array of 5 to 10 strings.
+All words must be appropriate for a **\${gradeLevel}** student.
+You must provide words for every key.
+The "punctuation" array must include at least ".", ",", and "?".
+Your entire response must be only the JSON object, starting with "{" and ending with "}". Do not include any other text, markdown, or explanations.`;
 
             let state = {
                 sentenceTemplate: [["The", "A"], ["cat", "dog", "fox"], ["sat", "ran"], ["on", "under"], ["the"], ["mat", "log"]],
@@ -222,7 +210,7 @@
             };
 
             // --- AUTHENTICATION & DEBUG MODE ---
-            const isCanvasEnvironment = window.self !== window.top;
+            const isCanvasEnvironment = typeof __app_id !== 'undefined';
 
             if (isCanvasEnvironment) {
                 // Bypass login for Canvas/debug environment
@@ -559,7 +547,7 @@
             }
 
             function listenForSessions() {
-                if (!state.currentUser) return;
+                if (!state.currentUser || isCanvasEnvironment) return;
                 const q = query(collection(db, "sessions"), where("userId", "==", state.currentUser.uid));
                 onSnapshot(q, (querySnapshot) => {
                     const sessions = [];
@@ -616,17 +604,41 @@
                 const { schema, systemPrompt } = getPromptConfig(state.mode);
 
                 try {
-                    const generateTemplateFunction = httpsCallable(functions, 'generateTemplate');
-                    const result = await generateTemplateFunction({ prompt, systemPrompt, schema });
-                    const data = result.data;
+                    let data;
+                    if (isCanvasEnvironment) {
+                        console.log("Running in Canvas Debug Mode. Calling Gemini API directly.");
+                        const apiKey = ""; // Injected by Canvas
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                        const payload = {
+                            contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\nUser Prompt: " + prompt }] }],
+                            generationConfig: { responseMimeType: "application/json", responseSchema: schema }
+                        };
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (!response.ok) {
+                            const errorText = await response.text();
+                            throw new Error(`API Error: ${response.statusText} - ${errorText}`);
+                        }
+                        data = await response.json();
+                    } else {
+                        const generateTemplateFunction = httpsCallable(functions, 'generateTemplate');
+                        const result = await httpsCallable(functions, 'generateTemplate')({ prompt, systemPrompt, schema });
+                        data = result.data;
+                    }
 
                     if (data.candidates && data.candidates[0].content.parts[0].text) {
+                        const rawText = data.candidates[0].content.parts[0].text;
                         let parsedJson;
                         try {
-                            parsedJson = JSON.parse(data.candidates[0].content.parts[0].text);
+                            const cleanedText = rawText.replace(/```json\n?|\n?```/g, '').trim();
+                            parsedJson = JSON.parse(cleanedText);
                         } catch (e) {
-                            console.error("JSON Parsing Error:", e);
-                            throw new Error("The AI returned an invalid response format. Please try generating again.");
+                            console.error("JSON Parsing Error:", e, "Raw text:", rawText);
+                            showModal(`Failed to parse AI response. Please check the format.\n\nRaw Response:\n${rawText}`);
+                            return;
                         }
 
                         state.sentenceTemplate = state.mode === 'guided' ? parsedJson.wordGroups : parsedJson;
@@ -634,7 +646,10 @@
                         state.studentSubmissions = [];
                         resetCurrentSentence();
                         showModal("New sentence template created and is now editable.");
-                    } else { throw new Error("Could not generate a valid template from the prompt."); }
+                    } else { 
+                        console.error("Invalid API response structure:", data);
+                        throw new Error("Could not generate a valid template from the prompt."); 
+                    }
                 } catch (error) {
                     console.error("Error generating template:", error);
                     showModal(`An error occurred: ${error.message}`);
