@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Sentence Builder</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -37,6 +37,14 @@
         .advanced-word-group { background-color: #f3f4f6; border-radius: 0.75rem; padding: 1rem; }
         .advanced-word-group h3 { font-semibold; text-transform: capitalize; margin-bottom: 0.75rem; color: #4338ca; }
         .advanced-word-group .word-token { margin-bottom: 0.5rem; }
+        /* Ghost element for touch drag */
+        .ghost {
+            position: absolute;
+            pointer-events: none;
+            opacity: 0.7;
+            z-index: 100;
+            transform: translate(-50%, -50%); /* Center on finger */
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -226,6 +234,13 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                 currentUser: null, currentSessionId: null, mode: 'guided',
                 guidedSystemPrompt: defaultGuidedPrompt,
                 advancedSystemPrompt: defaultAdvancedPrompt
+            };
+            
+            let touchState = {
+                ghostEl: null,
+                draggedEl: null,
+                lastTouchX: 0,
+                lastTouchY: 0
             };
 
             // --- AUTHENTICATION & DEBUG MODE ---
@@ -452,10 +467,13 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                 const el = document.createElement('div');
                 el.id = id; el.textContent = text;
                 el.className = 'word-token bg-white px-4 py-2 rounded-lg shadow-md border border-gray-200 text-lg font-medium';
-                el.draggable = isDraggable;
+                if (isDraggable) {
+                    el.draggable = true;
+                    el.addEventListener('dragstart', handleStudentWordDragStart);
+                    el.addEventListener('dragend', handleStudentWordDragEnd);
+                    el.addEventListener('touchstart', handleTouchStart, { passive: false });
+                }
                 if (isDisabled) el.classList.add('disabled');
-                el.addEventListener('dragstart', handleStudentWordDragStart);
-                el.addEventListener('dragend', handleStudentWordDragEnd);
                 return el;
             }
 
@@ -544,6 +562,76 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                     }
                     render();
                 }
+            }
+
+            // --- TOUCH DRAG & DROP ---
+            function handleTouchStart(e) {
+                e.preventDefault();
+                const target = e.target;
+                if (target.classList.contains('disabled')) return;
+
+                touchState.draggedEl = target;
+                touchState.ghostEl = target.cloneNode(true);
+                touchState.ghostEl.classList.add('ghost');
+                document.body.appendChild(touchState.ghostEl);
+                
+                const touch = e.touches[0];
+                touchState.lastTouchX = touch.clientX;
+                touchState.lastTouchY = touch.clientY;
+                touchState.ghostEl.style.left = `${touch.clientX}px`;
+                touchState.ghostEl.style.top = `${touch.clientY}px`;
+                
+                if (target.id.startsWith('composed-')) {
+                    studentTrashCan.classList.add('visible');
+                }
+
+                document.addEventListener('touchmove', handleTouchMove, { passive: false });
+                document.addEventListener('touchend', handleTouchEnd, { passive: false });
+            }
+
+            function handleTouchMove(e) {
+                e.preventDefault();
+                if (!touchState.ghostEl) return;
+                
+                const touch = e.touches[0];
+                touchState.lastTouchX = touch.clientX;
+                touchState.lastTouchY = touch.clientY;
+                touchState.ghostEl.style.left = `${touch.clientX}px`;
+                touchState.ghostEl.style.top = `${touch.clientY}px`;
+
+                const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+                sentenceBox.classList.toggle('drag-over', sentenceBox.contains(elementBelow));
+                studentTrashCan.classList.toggle('drag-over', studentTrashCan.contains(elementBelow));
+            }
+
+            function handleTouchEnd(e) {
+                if (!touchState.draggedEl) return;
+                
+                const elementBelow = document.elementFromPoint(touchState.lastTouchX, touchState.lastTouchY);
+
+                if (sentenceBox.contains(elementBelow) && touchState.draggedEl.id.startsWith('bank-')) {
+                    const wordText = touchState.draggedEl.textContent;
+                    state.composedSentence.push({ id: crypto.randomUUID(), text: wordText });
+                    if (state.mode === 'guided') {
+                        state.currentGroupIndex++;
+                    }
+                    render();
+                } else if (studentTrashCan.contains(elementBelow) && touchState.draggedEl.id.startsWith('composed-')) {
+                    const wordIndex = parseInt(touchState.draggedEl.dataset.wordIndex, 10);
+                    state.composedSentence.splice(wordIndex, 1);
+                    if (state.mode === 'guided') {
+                        state.currentGroupIndex = state.composedSentence.length;
+                    }
+                    render();
+                }
+
+                document.body.removeChild(touchState.ghostEl);
+                sentenceBox.classList.remove('drag-over');
+                studentTrashCan.classList.remove('visible', 'drag-over');
+                touchState.ghostEl = null;
+                touchState.draggedEl = null;
+                document.removeEventListener('touchmove', handleTouchMove);
+                document.removeEventListener('touchend', handleTouchEnd);
             }
 
             function updateVocabLabel() {
