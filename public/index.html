@@ -32,6 +32,11 @@
         .modal-content { background-color: white; padding: 2rem; border-radius: 0.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); max-width: 90%; width: 500px; text-align: center; }
         .session-item { cursor: pointer; transition: background-color 0.2s; }
         .session-item:hover { background-color: #eef2ff; }
+        /* Advanced Mode Word Bank */
+        .advanced-word-bank { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; }
+        .advanced-word-group { background-color: #f3f4f6; border-radius: 0.75rem; padding: 1rem; }
+        .advanced-word-group h3 { font-semibold; text-transform: capitalize; margin-bottom: 0.75rem; color: #4338ca; }
+        .advanced-word-group .word-token { margin-bottom: 0.5rem; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -76,7 +81,7 @@
                             <button id="check-button" class="p-3 bg-green-500 text-white rounded-full shadow hover:bg-green-600 transition"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg></button>
                         </div>
                     </div>
-                    <div id="word-bank" class="word-bank mt-6 shadow-md"></div>
+                    <div id="word-bank-container" class="mt-6"></div>
                     <div id="completion-message" class="hidden text-center mt-6 p-4 bg-green-100 text-green-700 rounded-lg"><p class="font-semibold">Great job! You've completed the sentence.</p><p>You can use the ✓ button to save it, or the X button to start over.</p></div>
                 </div>
 
@@ -88,6 +93,12 @@
                             <p class="text-gray-600">Enter a prompt. The AI will generate an editable word bank below.</p>
                             <div><label for="prompt-input" class="block text-sm font-medium text-gray-700">Prompt:</label><textarea id="prompt-input" rows="4" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="e.g., The quick brown fox jumps over the lazy dog."></textarea></div>
                             <div class="space-y-2"><label for="vocab-slider" class="block text-sm font-medium text-gray-700">Vocabulary Level: <span id="vocab-level-label" class="font-bold text-indigo-600">1st Grade</span></label><input id="vocab-slider" type="range" min="1" max="5" value="1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"></div>
+                            <div class="flex items-center space-x-4">
+                                <label for="advanced-mode-toggle" class="flex items-center cursor-pointer">
+                                    <span class="mr-3 text-sm font-medium text-gray-900">Advanced Mode</span>
+                                    <div class="relative"><input type="checkbox" id="advanced-mode-toggle" class="sr-only peer"><div class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div></div>
+                                </label>
+                            </div>
                             <div class="flex items-center justify-end space-x-4">
                                 <div id="loading-indicator" class="hidden"><svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                                 <button id="generate-button" class="px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition">Generate Template</button>
@@ -153,7 +164,7 @@
             const userInfo = document.getElementById('user-info');
             const studentView = document.getElementById('student-view'), instructorView = document.getElementById('instructor-view');
             const studentTabButton = document.getElementById('student-tab-button'), instructorTabButton = document.getElementById('instructor-tab-button');
-            const sentenceBox = document.getElementById('sentence-box'), wordBank = document.getElementById('word-bank');
+            const sentenceBox = document.getElementById('sentence-box'), wordBankContainer = document.getElementById('word-bank-container');
             const studentTrashCan = document.getElementById('student-trash-can');
             const speakButton = document.getElementById('speak-button'), xButton = document.getElementById('x-button'), checkButton = document.getElementById('check-button');
             const completionMessage = document.getElementById('completion-message');
@@ -163,6 +174,7 @@
             const studentSubmissionsArea = document.getElementById('student-submissions-area');
             const copyButton = document.getElementById('copy-button'), copyHelper = document.getElementById('copy-helper');
             const vocabSlider = document.getElementById('vocab-slider'), vocabLevelLabel = document.getElementById('vocab-level-label');
+            const advancedModeToggle = document.getElementById('advanced-mode-toggle');
             const saveSessionButton = document.getElementById('save-session-button');
             const pastSessionsList = document.getElementById('past-sessions-list');
             const modal = document.getElementById('modal'), modalMessage = document.getElementById('modal-message'), modalClose = document.getElementById('modal-close');
@@ -170,7 +182,7 @@
             let state = {
                 sentenceTemplate: [["The", "A"], ["cat", "dog", "fox"], ["sat", "ran"], ["on", "under"], ["the"], ["mat", "log"]],
                 composedSentence: [], currentGroupIndex: 0, studentSubmissions: [],
-                currentUser: null, currentSessionId: null,
+                currentUser: null, currentSessionId: null, mode: 'guided' // 'guided' or 'advanced'
             };
 
             // --- AUTHENTICATION ---
@@ -221,7 +233,6 @@
                 renderSentenceBox(); renderWordBank(); renderInstructorTemplate(); renderStudentSubmissions(); updateUIState();
             }
 
-            // --- RENDER FUNCTIONS (Unchanged from previous version) ---
             function renderSentenceBox() {
                 sentenceBox.innerHTML = '';
                 if (state.composedSentence.length === 0) {
@@ -236,9 +247,20 @@
             }
 
             function renderWordBank() {
-                wordBank.innerHTML = '';
+                wordBankContainer.innerHTML = '';
                 completionMessage.classList.add('hidden');
-                wordBank.classList.remove('hidden');
+
+                if (state.mode === 'guided') {
+                    renderGuidedWordBank();
+                } else {
+                    renderAdvancedWordBank();
+                }
+            }
+            
+            function renderGuidedWordBank() {
+                const wordBank = document.createElement('div');
+                wordBank.className = 'word-bank shadow-md';
+                wordBankContainer.appendChild(wordBank);
 
                 if (state.currentGroupIndex >= state.sentenceTemplate.length) {
                     wordBank.classList.add('hidden');
@@ -260,39 +282,86 @@
                 });
             }
 
+            function renderAdvancedWordBank() {
+                const wordBank = document.createElement('div');
+                wordBank.className = 'advanced-word-bank';
+                wordBankContainer.appendChild(wordBank);
+
+                for (const partOfSpeech in state.sentenceTemplate) {
+                    const groupEl = document.createElement('div');
+                    groupEl.className = 'advanced-word-group';
+                    
+                    const title = document.createElement('h3');
+                    title.textContent = partOfSpeech;
+                    groupEl.appendChild(title);
+
+                    const words = state.sentenceTemplate[partOfSpeech];
+                    words.forEach(wordText => {
+                        const wordEl = createWordToken(wordText, `bank-${wordText}-${partOfSpeech}`, true, false);
+                        groupEl.appendChild(wordEl);
+                    });
+                    wordBank.appendChild(groupEl);
+                }
+            }
+
             function renderInstructorTemplate() {
                 templateDisplayArea.innerHTML = '';
-                if(state.sentenceTemplate.length === 0) return;
+                if(!state.sentenceTemplate) return;
+
+                if (state.mode === 'guided') {
+                    renderGuidedInstructorTemplate();
+                } else {
+                    renderAdvancedInstructorTemplate();
+                }
+            }
+            
+            function renderGuidedInstructorTemplate() {
                 const grid = document.createElement('div'); grid.className = 'template-grid';
                 state.sentenceTemplate.forEach((group, groupIndex) => {
                     const groupEl = document.createElement('div'); groupEl.className = 'template-group';
                     group.forEach((word, wordIndex) => {
-                        const wrapper = document.createElement('div');
-                        wrapper.className = 'template-word-wrapper';
-
-                        const input = document.createElement('input');
-                        input.type = 'text'; input.value = word; input.className = 'template-word-input';
-                        input.addEventListener('change', (e) => { state.sentenceTemplate[groupIndex][wordIndex] = e.target.value; });
-                        
-                        const removeBtn = document.createElement('button');
-                        removeBtn.innerHTML = '&times;';
-                        removeBtn.className = 'remove-word-btn';
-                        removeBtn.title = 'Remove word';
-                        removeBtn.addEventListener('click', () => handleRemoveInstructorWord(groupIndex, wordIndex));
-
-                        wrapper.appendChild(input);
-                        wrapper.appendChild(removeBtn);
-                        groupEl.appendChild(wrapper);
+                        groupEl.appendChild(createInstructorWordInput(word, groupIndex, wordIndex));
                     });
                     grid.appendChild(groupEl);
                 });
                 templateDisplayArea.appendChild(grid);
             }
 
-            function handleRemoveInstructorWord(groupIndex, wordIndex) {
-                state.sentenceTemplate[groupIndex].splice(wordIndex, 1);
-                if (state.sentenceTemplate[groupIndex].length === 0) {
-                    state.sentenceTemplate.splice(groupIndex, 1);
+            function renderAdvancedInstructorTemplate() {
+                const grid = document.createElement('div'); grid.className = 'template-grid';
+                for (const partOfSpeech in state.sentenceTemplate) {
+                    const groupEl = document.createElement('div'); groupEl.className = 'template-group';
+                    const title = document.createElement('h3');
+                    title.className = 'font-semibold text-indigo-700 capitalize';
+                    title.textContent = partOfSpeech;
+                    groupEl.appendChild(title);
+
+                    state.sentenceTemplate[partOfSpeech].forEach((word, wordIndex) => {
+                        groupEl.appendChild(createInstructorWordInput(word, partOfSpeech, wordIndex));
+                    });
+                    grid.appendChild(groupEl);
+                }
+                templateDisplayArea.appendChild(grid);
+            }
+
+            function createInstructorWordInput(word, groupKey, wordIndex) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'template-word-wrapper';
+                const input = document.createElement('input');
+                input.type = 'text'; input.value = word; input.className = 'template-word-input';
+                input.addEventListener('change', (e) => { state.sentenceTemplate[groupKey][wordIndex] = e.target.value; });
+                const removeBtn = document.createElement('button');
+                removeBtn.innerHTML = '&times;'; removeBtn.className = 'remove-word-btn'; removeBtn.title = 'Remove word';
+                removeBtn.addEventListener('click', () => handleRemoveInstructorWord(groupKey, wordIndex));
+                wrapper.appendChild(input);
+                wrapper.appendChild(removeBtn);
+                return wrapper;
+            }
+
+            function handleRemoveInstructorWord(groupKey, wordIndex) {
+                state.sentenceTemplate[groupKey].splice(wordIndex, 1);
+                if (state.sentenceTemplate[groupKey].length === 0) {
+                    delete state.sentenceTemplate[groupKey];
                 }
                 render();
             }
@@ -329,7 +398,11 @@
             }
 
             function resetCurrentSentence() {
-                state.composedSentence = []; state.currentGroupIndex = 0; render();
+                state.composedSentence = []; 
+                if (state.mode === 'guided') {
+                    state.currentGroupIndex = 0;
+                }
+                render();
             }
 
             function handleCheckSentence() {
@@ -379,7 +452,9 @@
                 if (e.dataTransfer.getData('source') === 'word-bank') {
                     const wordText = e.dataTransfer.getData('text/plain');
                     state.composedSentence.push({ id: crypto.randomUUID(), text: wordText });
-                    state.currentGroupIndex++;
+                    if (state.mode === 'guided') {
+                        state.currentGroupIndex++;
+                    }
                     render();
                 }
             }
@@ -388,8 +463,13 @@
                 e.preventDefault();
                 if (e.dataTransfer.getData('source') === 'sentence-box') {
                     const wordIndex = parseInt(e.dataTransfer.getData('wordIndex'), 10);
-                    state.composedSentence = state.composedSentence.slice(0, wordIndex);
-                    state.currentGroupIndex = wordIndex;
+                    state.composedSentence.splice(wordIndex, 1);
+                    if (state.mode === 'guided') {
+                        // This logic is tricky. A simple approach is to reset if a word is removed.
+                        // A more complex one would track which group the word came from.
+                        // For simplicity, we'll reset the student's progress to the new sentence length.
+                        state.currentGroupIndex = state.composedSentence.length;
+                    }
                     render();
                 }
             }
@@ -407,24 +487,18 @@
                 }
                 const sessionData = {
                     prompt: promptInput.value,
-                    template: state.sentenceTemplate,
+                    template: JSON.stringify(state.sentenceTemplate),
                     submissions: state.studentSubmissions,
                     userId: state.currentUser.uid,
-                    createdAt: new Date()
+                    createdAt: new Date(),
+                    mode: state.mode
                 };
 
                 try {
-                    if (state.currentSessionId) {
-                        // Update existing session
-                        const sessionRef = doc(db, "sessions", state.currentSessionId);
-                        await setDoc(sessionRef, sessionData, { merge: true });
-                        showModal("Session updated successfully!");
-                    } else {
-                        // Create new session
-                        const docRef = await addDoc(collection(db, "sessions"), sessionData);
-                        state.currentSessionId = docRef.id;
-                        showModal("Session saved successfully!");
-                    }
+                    const sessionRef = state.currentSessionId ? doc(db, "sessions", state.currentSessionId) : doc(collection(db, "sessions"));
+                    await setDoc(sessionRef, sessionData, { merge: true });
+                    state.currentSessionId = sessionRef.id;
+                    showModal("Session saved successfully!");
                 } catch (e) {
                     console.error("Error saving session: ", e);
                     showModal("Error: Could not save session.");
@@ -434,12 +508,9 @@
             function listenForSessions() {
                 if (!state.currentUser) return;
                 const q = query(collection(db, "sessions"), where("userId", "==", state.currentUser.uid));
-                
                 onSnapshot(q, (querySnapshot) => {
                     const sessions = [];
-                    querySnapshot.forEach((doc) => {
-                        sessions.push({ id: doc.id, ...doc.data() });
-                    });
+                    querySnapshot.forEach((doc) => sessions.push({ id: doc.id, ...doc.data() }));
                     renderPastSessions(sessions);
                 });
             }
@@ -454,10 +525,7 @@
                 sessions.forEach(session => {
                     const sessionEl = document.createElement('div');
                     sessionEl.className = 'session-item p-3 border rounded-lg';
-                    sessionEl.innerHTML = `
-                        <p class="font-semibold truncate">${session.prompt || 'Untitled Session'}</p>
-                        <p class="text-xs text-gray-500">${session.createdAt.toDate().toLocaleString()}</p>
-                    `;
+                    sessionEl.innerHTML = `<p class="font-semibold truncate">${session.prompt || 'Untitled Session'}</p><p class="text-xs text-gray-500">${session.createdAt.toDate().toLocaleString()}</p>`;
                     sessionEl.addEventListener('click', () => loadSession(session));
                     pastSessionsList.appendChild(sessionEl);
                 });
@@ -465,42 +533,40 @@
 
             function loadSession(session) {
                 promptInput.value = session.prompt;
-                state.sentenceTemplate = session.template;
-                state.studentSubmissions = session.submissions;
+                state.mode = session.mode || 'guided';
+                advancedModeToggle.checked = state.mode === 'advanced';
+                try {
+                    state.sentenceTemplate = typeof session.template === 'string' ? JSON.parse(session.template) : session.template;
+                } catch (e) {
+                    console.error("Failed to parse session template:", e);
+                    state.sentenceTemplate = state.mode === 'guided' ? [] : {};
+                }
+                state.studentSubmissions = session.submissions || [];
                 state.currentSessionId = session.id;
-                resetCurrentSentence(); // This will call render()
+                resetCurrentSentence();
                 showModal(`Session "${session.prompt || 'Untitled'}" loaded.`);
             }
 
-            // --- GEMINI API (Unchanged) ---
+            // --- GEMINI API ---
             async function handleGenerateTemplate() {
                 const prompt = promptInput.value.trim();
                 if (!prompt) { showModal("Please enter a prompt for the AI."); return; }
                 loadingIndicator.classList.remove('hidden'); generateButton.disabled = true;
                 
-                const schema = { type: "OBJECT", properties: { "wordGroups": { "type": "ARRAY", "items": { "type": "ARRAY", "items": { "type": "STRING" } } } }, required: ["wordGroups"] };
-                const gradeLevel = vocabLevelLabel.textContent;
-                
-                const systemPrompt = `You are an expert in linguistics and special education, specializing in creating versatile sentence-building exercises. Your task is to take a user-provided prompt and transform it into a template that allows a student to construct at least two or three different, complete sentences. Your output must be a JSON object that strictly follows this schema: \`{\"wordGroups\": [[\"word1\", \"word2\"], [\"next_word\"], ...]}\`. Key Instructions: 1. Vocabulary Level: The vocabulary used must be appropriate for a **${gradeLevel}** student. 2. Provide Rich Alternatives: For each word group, provide 2-4 reasonable alternatives. The total number of words in a group must not exceed 5. Avoid single-word groups unless it's for an article like 'a' or 'the' where alternatives are not sensible. 3. Enable Multiple Sentences: The combination of word groups should allow for the creation of multiple distinct sentences. 4. No Punctuation: Do NOT include punctuation like periods or commas as items in the arrays.`;
+                state.mode = advancedModeToggle.checked ? 'advanced' : 'guided';
+                const { schema, systemPrompt } = getPromptConfig(state.mode);
 
                 try {
                     const generateTemplateFunction = httpsCallable(functions, 'generateTemplate');
-                    const result = await generateTemplateFunction({ 
-                        prompt: prompt, 
-                        systemPrompt: systemPrompt,
-                        schema: schema 
-                    });
-                    const data = result.data; // The data returned from your function
-
+                    const result = await generateTemplateFunction({ prompt, systemPrompt, schema });
+                    const data = result.data;
                     if (data.candidates && data.candidates[0].content.parts[0].text) {
                         const parsedJson = JSON.parse(data.candidates[0].content.parts[0].text);
-                        if (parsedJson.wordGroups && Array.isArray(parsedJson.wordGroups)) {
-                            state.sentenceTemplate = parsedJson.wordGroups;
-                            state.currentSessionId = null;
-                            state.studentSubmissions = [];
-                            resetCurrentSentence();
-                            showModal("New sentence template created and is now editable.");
-                        } else { throw new Error("Invalid data structure received from AI."); }
+                        state.sentenceTemplate = state.mode === 'guided' ? parsedJson.wordGroups : parsedJson;
+                        state.currentSessionId = null;
+                        state.studentSubmissions = [];
+                        resetCurrentSentence();
+                        showModal("New sentence template created and is now editable.");
                     } else { throw new Error("Could not generate a valid template from the prompt."); }
                 } catch (error) {
                     console.error("Error generating template:", error);
@@ -508,6 +574,31 @@
                 } finally {
                     loadingIndicator.classList.add('hidden'); generateButton.disabled = false;
                 }
+            }
+
+            function getPromptConfig(mode) {
+                const gradeLevel = vocabLevelLabel.textContent;
+                if (mode === 'advanced') {
+                    return {
+                        schema: {
+                            type: "OBJECT",
+                            properties: {
+                                "nouns": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "pronouns": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "articles": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "verbs": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "adjectives": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "punctuation": { "type": "ARRAY", "items": { "type": "STRING" } },
+                            },
+                        },
+                        systemPrompt: `You are an expert in linguistics and special education. Your task is to take a user-provided prompt and break it down into groups based on parts of speech. The output must be a JSON object. The keys of the object should be parts of speech (nouns, pronouns, articles, verbs, adjectives, punctuation). The values should be arrays of 2-5 related words. The vocabulary used must be appropriate for a **${gradeLevel}** student. Always include a "punctuation" group with "." and "?".`
+                    };
+                }
+                // Default to guided mode
+                return {
+                    schema: { type: "OBJECT", properties: { "wordGroups": { "type": "ARRAY", "items": { "type": "ARRAY", "items": { "type": "STRING" } } } }, required: ["wordGroups"] },
+                    systemPrompt: `You are an expert in linguistics and special education, specializing in creating versatile sentence-building exercises. Your task is to take a user-provided prompt and transform it into a template that allows a student to construct at least two or three different, complete sentences. Your output must be a JSON object that strictly follows this schema: \`{\"wordGroups\": [[\"word1\", \"word2\"], [\"next_word\"], ...]}\`. Key Instructions: 1. Vocabulary Level: The vocabulary used must be appropriate for a **${gradeLevel}** student. 2. Provide Rich Alternatives: For each word group, provide 2-4 reasonable alternatives. The total number of words in a group must not exceed 5. Avoid single-word groups unless it's for an article like 'a' or 'the' where alternatives are not sensible. 3. Enable Multiple Sentences: The combination of word groups should allow for the creation of multiple distinct sentences. 4. No Punctuation: Do NOT include punctuation like periods or commas as items in the arrays.`
+                };
             }
 
             function showModal(message) { modalMessage.textContent = message; modal.classList.remove('hidden'); }
