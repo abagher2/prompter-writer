@@ -120,6 +120,8 @@
         import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
         // BEGIN - Firebase Configuration
+        // Add this with your other Firebase imports
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
         import { initializeApp } from "firebase/app";
         import { getAnalytics } from "firebase/analytics";
         // TODO: Add SDKs for Firebase products that you want to use
@@ -140,6 +142,7 @@
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const analytics = getAnalytics(app);
+        const functions = getFunctions(app);
 
         // END - Firebase Configuration
 
@@ -486,18 +489,20 @@
                 const systemPrompt = `You are an expert in linguistics and special education, specializing in creating versatile sentence-building exercises. Your task is to take a user-provided prompt and transform it into a template that allows a student to construct at least two or three different, complete sentences. Your output must be a JSON object that strictly follows this schema: \`{\"wordGroups\": [[\"word1\", \"word2\"], [\"next_word\"], ...]}\`. Key Instructions: 1. Vocabulary Level: The vocabulary used must be appropriate for a **${gradeLevel}** student. 2. Provide Rich Alternatives: For each word group, provide 2-4 reasonable alternatives. The total number of words in a group must not exceed 5. Avoid single-word groups unless it's for an article like 'a' or 'the' where alternatives are not sensible. 3. Enable Multiple Sentences: The combination of word groups should allow for the creation of multiple distinct sentences. 4. No Punctuation: Do NOT include punctuation like periods or commas as items in the arrays.`;
 
                 try {
-                    const apiKey = ""; // Use environment-injected key
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-                    const payload = { contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\nUser Prompt: " + prompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: schema } };
-                    const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
-                    const result = await response.json();
-                    if (result.candidates && result.candidates[0].content.parts[0].text) {
-                        const parsedJson = JSON.parse(result.candidates[0].content.parts[0].text);
+                    const generateTemplateFunction = httpsCallable(functions, 'generateTemplate');
+                    const result = await generateTemplateFunction({ 
+                        prompt: prompt, 
+                        systemPrompt: systemPrompt,
+                        schema: schema 
+                    });
+                    const data = result.data; // The data returned from your function
+
+                    if (data.candidates && data.candidates[0].content.parts[0].text) {
+                        const parsedJson = JSON.parse(data.candidates[0].content.parts[0].text);
                         if (parsedJson.wordGroups && Array.isArray(parsedJson.wordGroups)) {
                             state.sentenceTemplate = parsedJson.wordGroups;
-                            state.currentSessionId = null; // New template means it's a new session
-                            state.studentSubmissions = []; // Clear submissions for new template
+                            state.currentSessionId = null;
+                            state.studentSubmissions = [];
                             resetCurrentSentence();
                             showModal("New sentence template created and is now editable.");
                         } else { throw new Error("Invalid data structure received from AI."); }
