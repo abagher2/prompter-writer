@@ -203,7 +203,6 @@
 5.  **Punctuation:** The "punctuation" array should always include at least ".", ",", and "?".
 
 **Example Output Structure:**
-\`\`\`json
 {
   "nouns": ["dog", "park", "ball", "leash", "friend"],
   "pronouns": ["he", "she", "it", "they", "we"],
@@ -212,8 +211,7 @@
   "adjectives": ["happy", "big", "brown", "fast", "sunny"],
   "adverbs": ["quickly", "happily", "slowly", "eagerly", "loudly"],
   "punctuation": [".", ",", "?", "!"]
-}
-\`\`\``;
+}`;
 
             let state = {
                 sentenceTemplate: [["The", "A"], ["cat", "dog", "fox"], ["sat", "ran"], ["on", "under"], ["the"], ["mat", "log"]],
@@ -223,28 +221,43 @@
                 advancedSystemPrompt: defaultAdvancedPrompt
             };
 
-            // --- AUTHENTICATION ---
-            onAuthStateChanged(auth, (user) => {
-                if (user) {
-                    state.currentUser = user;
-                    authView.classList.add('hidden');
-                    mainApp.classList.remove('hidden');
-                    userInfo.textContent = `Signed in as ${user.displayName}`;
-                    initialize();
-                    listenForSessions();
-                } else {
-                    state.currentUser = null;
-                    authView.classList.remove('hidden');
-                    mainApp.classList.add('hidden');
-                }
-            });
+            // --- AUTHENTICATION & DEBUG MODE ---
+            const isCanvasEnvironment = window.self !== window.top;
 
-            loginButton.addEventListener('click', () => {
-                signInWithPopup(auth, provider).catch(error => console.error("Login failed:", error));
-            });
+            if (isCanvasEnvironment) {
+                // Bypass login for Canvas/debug environment
+                state.currentUser = { displayName: 'Debug User', uid: 'canvas-debug-user' };
+                authView.classList.add('hidden');
+                mainApp.classList.remove('hidden');
+                userInfo.textContent = `Signed in as ${state.currentUser.displayName}`;
+                initialize();
+                // We don't listen for sessions in debug mode to avoid Firestore reads
+            } else {
+                // Standard Firebase Auth flow
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        state.currentUser = user;
+                        authView.classList.add('hidden');
+                        mainApp.classList.remove('hidden');
+                        userInfo.textContent = `Signed in as ${user.displayName}`;
+                        initialize();
+                        listenForSessions();
+                    } else {
+                        state.currentUser = null;
+                        authView.classList.remove('hidden');
+                        mainApp.classList.add('hidden');
+                    }
+                });
+
+                loginButton.addEventListener('click', () => signInWithPopup(auth, provider).catch(error => console.error("Login failed:", error)));
+            }
 
             logoutButton.addEventListener('click', () => {
-                signOut(auth).catch(error => console.error("Logout failed:", error));
+                if (!isCanvasEnvironment) {
+                    signOut(auth).catch(error => console.error("Logout failed:", error));
+                } else {
+                    showModal("Logout is disabled in Debug Mode.");
+                }
             });
             
             function initialize() {
@@ -606,8 +619,16 @@
                     const generateTemplateFunction = httpsCallable(functions, 'generateTemplate');
                     const result = await generateTemplateFunction({ prompt, systemPrompt, schema });
                     const data = result.data;
+
                     if (data.candidates && data.candidates[0].content.parts[0].text) {
-                        const parsedJson = JSON.parse(data.candidates[0].content.parts[0].text);
+                        let parsedJson;
+                        try {
+                            parsedJson = JSON.parse(data.candidates[0].content.parts[0].text);
+                        } catch (e) {
+                            console.error("JSON Parsing Error:", e);
+                            throw new Error("The AI returned an invalid response format. Please try generating again.");
+                        }
+
                         state.sentenceTemplate = state.mode === 'guided' ? parsedJson.wordGroups : parsedJson;
                         state.currentSessionId = null;
                         state.studentSubmissions = [];
