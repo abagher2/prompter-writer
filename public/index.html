@@ -107,8 +107,22 @@
                             <div id="template-display-area" class="mt-4"></div>
                         </div>
                         <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
-                            <div class="flex justify-between items-center"><h2 class="text-xl font-bold text-gray-700">Student Submissions</h2><button id="copy-button" class="px-4 py-2 bg-gray-600 text-white text-sm font-semibold rounded-lg shadow hover:bg-gray-700 transition disabled:bg-gray-300">Copy Text</button></div>
+                            <div class="flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-gray-700">Student Submissions</h2>
+                                <div class="flex items-center gap-2">
+                                    <div id="revision-loading-indicator" class="hidden"><svg class="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+                                    <button id="revise-button" class="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg shadow hover:bg-blue-700 transition disabled:bg-gray-300">Revise with AI</button>
+                                    <button id="copy-button" class="px-4 py-2 bg-gray-600 text-white text-sm font-semibold rounded-lg shadow hover:bg-gray-700 transition disabled:bg-gray-300">Copy Text</button>
+                                </div>
+                            </div>
                             <div id="student-submissions-area" class="w-full p-4 rounded-lg bg-gray-50 border min-h-[100px] whitespace-pre-wrap"><p class="text-gray-400">Sentences submitted by the student will appear here.</p></div>
+                            <div id="revised-section" class="hidden space-y-4">
+                                <div class="flex justify-between items-center">
+                                    <h2 class="text-xl font-bold text-gray-700">Revised Submissions</h2>
+                                    <button id="copy-revised-button" class="px-4 py-2 bg-gray-600 text-white text-sm font-semibold rounded-lg shadow hover:bg-gray-700 transition disabled:bg-gray-300">Copy Text</button>
+                                </div>
+                                <div id="revised-submissions-area" class="w-full p-4 rounded-lg bg-green-50 border border-green-200 min-h-[100px] whitespace-pre-wrap"></div>
+                            </div>
                             <textarea id="copy-helper" class="absolute -left-full"></textarea>
                         </div>
                         <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
@@ -134,7 +148,7 @@
         </div>
     </div>
 
-    <div id="modal" class="modal-backdrop hidden"><div class="modal-content"><p id="modal-message" class="text-lg text-gray-700"></p><button id="modal-close" class="mt-6 px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700">OK</button></div></div>
+    <div id="modal" class="modal-backdrop hidden"><div class="modal-content"><p id="modal-message" class="text-lg text-gray-700 whitespace-pre-wrap"></p><button id="modal-close" class="mt-6 px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700">OK</button></div></div>
 
     <script type="module">
         // Firebase Imports
@@ -191,6 +205,11 @@
             const guidedPromptInput = document.getElementById('guided-prompt-input');
             const advancedPromptInput = document.getElementById('advanced-prompt-input');
             const modal = document.getElementById('modal'), modalMessage = document.getElementById('modal-message'), modalClose = document.getElementById('modal-close');
+            const reviseButton = document.getElementById('revise-button');
+            const revisionLoadingIndicator = document.getElementById('revision-loading-indicator');
+            const revisedSection = document.getElementById('revised-section');
+            const revisedSubmissionsArea = document.getElementById('revised-submissions-area');
+            const copyRevisedButton = document.getElementById('copy-revised-button');
 
             const defaultGuidedPrompt = `You are an expert in linguistics and special education, specializing in creating versatile sentence-building exercises. Your task is to take a user-provided prompt and transform it into a template that allows a student to construct at least two or three different, complete sentences. Your output must be a JSON object that strictly follows this schema: \`{\"wordGroups\": [[\"word1\", \"word2\"], [\"next_word\"], ...]}\`. Key Instructions: 1. Vocabulary Level: The vocabulary used must be appropriate for a **\${gradeLevel}** student. 2. Provide Rich Alternatives: For each word group, provide 2-4 reasonable alternatives. The total number of words in a group must not exceed 5. Avoid single-word groups unless it's for an article like 'a' or 'the' where alternatives are not sensible. 3. Enable Multiple Sentences: The combination of word groups should allow for the creation of multiple distinct sentences. 4. No Punctuation: Do NOT include punctuation like periods or commas as items in the arrays.`;
             const defaultAdvancedPrompt = `Your task is to generate a single, valid JSON object based on a user's subject.
@@ -203,7 +222,7 @@ Your entire response must be only the JSON object, starting with "{" and ending 
 
             let state = {
                 sentenceTemplate: [["The", "A"], ["cat", "dog", "fox"], ["sat", "ran"], ["on", "under"], ["the"], ["mat", "log"]],
-                composedSentence: [], currentGroupIndex: 0, studentSubmissions: [],
+                composedSentence: [], currentGroupIndex: 0, studentSubmissions: [], revisedSubmissions: '',
                 currentUser: null, currentSessionId: null, mode: 'guided',
                 guidedSystemPrompt: defaultGuidedPrompt,
                 advancedSystemPrompt: defaultAdvancedPrompt
@@ -219,7 +238,6 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                 mainApp.classList.remove('hidden');
                 userInfo.textContent = `Signed in as ${state.currentUser.displayName}`;
                 initialize();
-                // We don't listen for sessions in debug mode to avoid Firestore reads
             } else {
                 // Standard Firebase Auth flow
                 onAuthStateChanged(auth, (user) => {
@@ -259,9 +277,11 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                 checkButton.addEventListener('click', handleCheckSentence);
                 speakButton.addEventListener('click', speakSentence);
                 generateButton.addEventListener('click', handleGenerateTemplate);
-                copyButton.addEventListener('click', handleCopySubmissions);
+                copyButton.addEventListener('click', () => handleCopy(studentSubmissionsArea.textContent));
+                copyRevisedButton.addEventListener('click', () => handleCopy(revisedSubmissionsArea.textContent));
                 vocabSlider.addEventListener('input', updateVocabLabel);
                 saveSessionButton.addEventListener('click', saveSession);
+                reviseButton.addEventListener('click', handleRevision);
                 modalClose.addEventListener('click', hideModal);
                 sentenceBox.addEventListener('dragover', e => { e.preventDefault(); sentenceBox.classList.add('drag-over'); });
                 sentenceBox.addEventListener('dragleave', () => sentenceBox.classList.remove('drag-over'));
@@ -272,7 +292,7 @@ Your entire response must be only the JSON object, starting with "{" and ending 
             }
             
             function render() {
-                renderSentenceBox(); renderWordBank(); renderInstructorTemplate(); renderStudentSubmissions(); updateUIState();
+                renderSentenceBox(); renderWordBank(); renderInstructorTemplate(); renderStudentSubmissions(); renderRevisedSubmissions(); updateUIState();
             }
 
             function renderSentenceBox() {
@@ -413,6 +433,19 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                     ? '<p class="text-gray-400">Sentences submitted by the student will appear here.</p>'
                     : state.studentSubmissions.join('\n');
                 copyButton.disabled = state.studentSubmissions.length === 0;
+                reviseButton.disabled = state.studentSubmissions.length === 0;
+            }
+
+            function renderRevisedSubmissions() {
+                if (state.revisedSubmissions) {
+                    revisedSection.classList.remove('hidden');
+                    revisedSubmissionsArea.textContent = state.revisedSubmissions;
+                    copyRevisedButton.disabled = false;
+                } else {
+                    revisedSection.classList.add('hidden');
+                    revisedSubmissionsArea.textContent = '';
+                    copyRevisedButton.disabled = true;
+                }
             }
             
             function createWordToken(text, id, isDraggable, isDisabled) {
@@ -449,7 +482,7 @@ Your entire response must be only the JSON object, starting with "{" and ending 
 
             function handleCheckSentence() {
                 if (state.composedSentence.length > 0) {
-                    const sentenceText = state.composedSentence.map(w => w.text).join(' ') + '.';
+                    const sentenceText = state.composedSentence.map(w => w.text).join(' ');
                     state.studentSubmissions.push(sentenceText);
                     resetCurrentSentence();
                     renderStudentSubmissions();
@@ -463,9 +496,9 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                 } else { showModal('Sorry, your browser does not support text-to-speech.'); }
             }
 
-            function handleCopySubmissions() {
-                if (!studentSubmissionsArea.textContent || state.studentSubmissions.length === 0) return;
-                copyHelper.value = studentSubmissionsArea.textContent; copyHelper.select();
+            function handleCopy(textToCopy) {
+                if (!textToCopy) return;
+                copyHelper.value = textToCopy; copyHelper.select();
                 try { document.execCommand('copy'); showModal('Copied to clipboard!'); } catch (err) { showModal('Failed to copy text.'); }
                 copyHelper.value = '';
             }
@@ -528,6 +561,7 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                     prompt: promptInput.value,
                     template: JSON.stringify(state.sentenceTemplate),
                     submissions: state.studentSubmissions,
+                    revisedSubmissions: state.revisedSubmissions,
                     userId: state.currentUser.uid,
                     createdAt: new Date(),
                     mode: state.mode,
@@ -589,6 +623,7 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                     state.sentenceTemplate = state.mode === 'guided' ? [] : {};
                 }
                 state.studentSubmissions = session.submissions || [];
+                state.revisedSubmissions = session.revisedSubmissions || '';
                 state.currentSessionId = session.id;
                 resetCurrentSentence();
                 showModal(`Session "${session.prompt || 'Untitled'}" loaded.`);
@@ -606,25 +641,16 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                 try {
                     let data;
                     if (isCanvasEnvironment) {
-                        console.log("Running in Canvas Debug Mode. Calling Gemini API directly.");
                         const apiKey = ""; // Injected by Canvas
                         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
                         const payload = {
                             contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\nUser Prompt: " + prompt }] }],
                             generationConfig: { responseMimeType: "application/json", responseSchema: schema }
                         };
-                        const response = await fetch(apiUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        });
-                        if (!response.ok) {
-                            const errorText = await response.text();
-                            throw new Error(`API Error: ${response.statusText} - ${errorText}`);
-                        }
+                        const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                        if (!response.ok) { const errorText = await response.text(); throw new Error(`API Error: ${response.statusText} - ${errorText}`); }
                         data = await response.json();
                     } else {
-                        const generateTemplateFunction = httpsCallable(functions, 'generateTemplate');
                         const result = await httpsCallable(functions, 'generateTemplate')({ prompt, systemPrompt, schema });
                         data = result.data;
                     }
@@ -644,6 +670,7 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                         state.sentenceTemplate = state.mode === 'guided' ? parsedJson.wordGroups : parsedJson;
                         state.currentSessionId = null;
                         state.studentSubmissions = [];
+                        state.revisedSubmissions = '';
                         resetCurrentSentence();
                         showModal("New sentence template created and is now editable.");
                     } else { 
@@ -658,6 +685,47 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                 }
             }
 
+            async function handleRevision() {
+                if (state.studentSubmissions.length === 0) {
+                    showModal("There are no student submissions to revise.");
+                    return;
+                }
+                revisionLoadingIndicator.classList.remove('hidden');
+                reviseButton.disabled = true;
+
+                const gradeLevel = vocabLevelLabel.textContent;
+                const textToRevise = state.studentSubmissions.join('\n');
+                const systemPrompt = `You are a helpful teaching assistant. Rewrite the following text to correct grammar, capitalization, and punctuation. If necessary, add small connecting words to make the sentences sound natural. The revised text must be appropriate for a **${gradeLevel}** student.`;
+
+                try {
+                    let data;
+                    if (isCanvasEnvironment) {
+                        const apiKey = ""; // Injected by Canvas
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                        const payload = { contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\nText to revise:\n" + textToRevise }] }] };
+                        const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                        if (!response.ok) { const errorText = await response.text(); throw new Error(`API Error: ${response.statusText} - ${errorText}`); }
+                        data = await response.json();
+                    } else {
+                        const result = await httpsCallable(functions, 'reviseText')({ systemPrompt, textToRevise });
+                        data = result.data;
+                    }
+
+                    if (data.candidates && data.candidates[0].content.parts[0].text) {
+                        state.revisedSubmissions = data.candidates[0].content.parts[0].text;
+                        renderRevisedSubmissions();
+                    } else {
+                        throw new Error("The AI did not return a valid revision.");
+                    }
+                } catch (error) {
+                    console.error("Error revising text:", error);
+                    showModal(`An error occurred during revision: ${error.message}`);
+                } finally {
+                    revisionLoadingIndicator.classList.add('hidden');
+                    reviseButton.disabled = false;
+                }
+            }
+
             function getPromptConfig(mode) {
                 const gradeLevel = vocabLevelLabel.textContent;
                 if (mode === 'advanced') {
@@ -666,14 +734,11 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                         schema: {
                             type: "OBJECT",
                             properties: {
-                                "nouns": { "type": "ARRAY", "items": { "type": "STRING" } },
-                                "pronouns": { "type": "ARRAY", "items": { "type": "STRING" } },
-                                "articles": { "type": "ARRAY", "items": { "type": "STRING" } },
-                                "verbs": { "type": "ARRAY", "items": { "type": "STRING" } },
-                                "adjectives": { "type": "ARRAY", "items": { "type": "STRING" } },
-                                "adverbs": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "nouns": { "type": "ARRAY", "items": { "type": "STRING" } }, "pronouns": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "articles": { "type": "ARRAY", "items": { "type": "STRING" } }, "verbs": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "adjectives": { "type": "ARRAY", "items": { "type": "STRING" } }, "adverbs": { "type": "ARRAY", "items": { "type": "STRING" } },
                                 "punctuation": { "type": "ARRAY", "items": { "type": "STRING" } },
-                            },
+                            }, required: ["nouns", "pronouns", "articles", "verbs", "adjectives", "adverbs", "punctuation"]
                         },
                         systemPrompt: promptText.replace(/\$\{gradeLevel\}/g, gradeLevel)
                     };
