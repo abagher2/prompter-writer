@@ -193,7 +193,27 @@
             const modal = document.getElementById('modal'), modalMessage = document.getElementById('modal-message'), modalClose = document.getElementById('modal-close');
 
             const defaultGuidedPrompt = `You are an expert in linguistics and special education, specializing in creating versatile sentence-building exercises. Your task is to take a user-provided prompt and transform it into a template that allows a student to construct at least two or three different, complete sentences. Your output must be a JSON object that strictly follows this schema: \`{\"wordGroups\": [[\"word1\", \"word2\"], [\"next_word\"], ...]}\`. Key Instructions: 1. Vocabulary Level: The vocabulary used must be appropriate for a **\${gradeLevel}** student. 2. Provide Rich Alternatives: For each word group, provide 2-4 reasonable alternatives. The total number of words in a group must not exceed 5. Avoid single-word groups unless it's for an article like 'a' or 'the' where alternatives are not sensible. 3. Enable Multiple Sentences: The combination of word groups should allow for the creation of multiple distinct sentences. 4. No Punctuation: Do NOT include punctuation like periods or commas as items in the arrays.`;
-            const defaultAdvancedPrompt = `You are an expert in linguistics and special education. Your task is to take a user-provided prompt and break it down into groups based on parts of speech. The output must be a JSON object. The keys of the object should be parts of speech (nouns, pronouns, articles, verbs, adjectives, punctuation). The values should be one array of 2-5 related words for each part of speech. **Crucially, ensure you provide a list of words for every part of speech listed in the schema, even if the list is short.** The vocabulary used must be appropriate for a **\${gradeLevel}** student. Always include a "punctuation" group with "." and "?".`;
+            const defaultAdvancedPrompt = `You are an expert in linguistics and special education. Your task is to take a user-provided subject and generate a JSON object containing lists of words related to that subject, categorized by their part of speech.
+
+**CRITICAL INSTRUCTIONS:**
+1.  **Output Format:** Your output **MUST** be a single, valid JSON object. Do not include any text or explanations outside of the JSON.
+2.  **JSON Structure:** The JSON object must have the following keys, exactly as written: "nouns", "pronouns", "articles", "verbs", "adjectives", "adverbs", and "punctuation". The value for each key must be an array of strings.
+3.  **Fill All Categories:** You **MUST** provide a list of 5-10 words for **EVERY** part of speech. If relevant words are scarce for a category, provide common, general-purpose words.
+4.  **Vocabulary Level:** All words must be appropriate for a **\${gradeLevel}** student.
+5.  **Punctuation:** The "punctuation" array should always include at least ".", ",", and "?".
+
+**Example Output Structure:**
+\`\`\`json
+{
+  "nouns": ["dog", "park", "ball", "leash", "friend"],
+  "pronouns": ["he", "she", "it", "they", "we"],
+  "articles": ["a", "an", "the"],
+  "verbs": ["run", "jump", "play", "catch", "wag"],
+  "adjectives": ["happy", "big", "brown", "fast", "sunny"],
+  "adverbs": ["quickly", "happily", "slowly", "eagerly", "loudly"],
+  "punctuation": [".", ",", "?", "!"]
+}
+\`\`\``;
 
             let state = {
                 sentenceTemplate: [["The", "A"], ["cat", "dog", "fox"], ["sat", "ran"], ["on", "under"], ["the"], ["mat", "log"]],
@@ -615,6 +635,7 @@
                                 "articles": { "type": "ARRAY", "items": { "type": "STRING" } },
                                 "verbs": { "type": "ARRAY", "items": { "type": "STRING" } },
                                 "adjectives": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "adverbs": { "type": "ARRAY", "items": { "type": "STRING" } },
                                 "punctuation": { "type": "ARRAY", "items": { "type": "STRING" } },
                             },
                         },
