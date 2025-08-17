@@ -7,14 +7,21 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; overscroll-behavior: none; }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevents scrolling on the body */
+        }
+        body { font-family: 'Inter', sans-serif; }
+        #app-container { height: 100%; display: flex; flex-direction: column; }
         .tab-button.active { border-color: #4f46e5; background-color: #eef2ff; color: #4f46e5; font-weight: 600; }
         .sentence-box { min-height: 150px; border: 2px dashed #d1d5db; transition: background-color 0.3s; }
         .sentence-box.drag-over { background-color: #dbeafe; border-color: #60a5fa; }
         .word-token { touch-action: none; cursor: grab; user-select: none; transition: transform 0.2s ease-in-out, box-shadow 0.2s, opacity 0.2s; }
         .word-token:active { cursor: grabbing; }
         .word-token.dragging { opacity: 0.5; transform: scale(1.1); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
-        .word-bank { min-height: 100px; display: flex; gap: 0.75rem; padding: 1rem; background-color: #e0e7ff; border-radius: 0.75rem; overflow-x: auto; }
+        .word-bank { min-height: 100px; display: flex; gap: 0.75rem; padding: 1rem; background-color: #e0e7ff; border-radius: 0.75rem; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
         .word-group { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; background-color: #c7d2fe; border-radius: 0.5rem; flex-shrink: 0; transition: background-color 0.3s, border-color 0.3s; }
         .word-group.active { background-color: #a5b4fc; border: 2px solid #6366f1; }
         .word-group .word-token.disabled { cursor: not-allowed; background-color: #e5e7eb; color: #9ca3af; opacity: 0.7; }
@@ -32,19 +39,15 @@
         .modal-content { background-color: white; padding: 2rem; border-radius: 0.75rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); max-width: 90%; width: 500px; text-align: center; }
         .session-item { cursor: pointer; transition: background-color 0.2s; }
         .session-item:hover { background-color: #eef2ff; }
-        /* Advanced Mode Word Bank */
-        .advanced-word-bank { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; }
+        .advanced-word-bank { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; overflow-y: auto; max-height: 30vh; }
         .advanced-word-group { background-color: #f3f4f6; border-radius: 0.75rem; padding: 1rem; }
         .advanced-word-group h3 { font-semibold; text-transform: capitalize; margin-bottom: 0.75rem; color: #4338ca; }
         .advanced-word-group .word-token { margin-bottom: 0.5rem; }
-        /* Ghost element for touch drag */
-        .ghost {
-            position: absolute;
-            pointer-events: none;
-            opacity: 0.7;
-            z-index: 100;
-            transform: translate(-50%, -50%); /* Center on finger */
-        }
+        .ghost { position: absolute; pointer-events: none; opacity: 0.7; z-index: 100; transform: translate(-50%, -50%); }
+        .view-panel { height: calc(100vh - 100px); display: flex; flex-direction: column; }
+        #student-view > .bg-white { flex-shrink: 0; }
+        #word-bank-container { flex-grow: 1; overflow: hidden; }
+        #instructor-view { overflow-y: auto; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -62,22 +65,18 @@
 
         <!-- Main App View -->
         <div id="main-app" class="hidden">
-            <header class="flex justify-between items-center mb-6">
-                <div id="user-info" class="text-sm text-gray-600"></div>
-                <button id="logout-button" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Logout</button>
-            </header>
             <div class="border-b border-gray-200">
                 <nav class="-mb-px flex space-x-4" aria-label="Tabs">
                     <button id="student-tab-button" class="tab-button whitespace-nowrap py-3 px-4 border-b-2 font-medium text-sm rounded-t-lg">Student</button>
-                    <button id="instructor-tab-button" class="tab-button whitespace-nowrap py-3 px-4 border-b-2 font-medium text-sm rounded-t-lg">Instructor</button>
+                    <button id="instructor-tab-button" class="tab-button whitespace-nowrap py-3 px-4 border-b-2 font-medium text-sm rounded-t-lg text-gray-500">Instructor</button>
                 </nav>
             </div>
-            <main class="mt-6">
+            <main class="mt-6 flex-grow overflow-hidden">
                 <!-- Student View -->
-                <div id="student-view">
+                <div id="student-view" class="view-panel">
                     <div class="bg-white p-6 rounded-xl shadow-md space-y-6">
                         <div class="flex justify-between items-start">
-                            <h1 class="text-xl font-bold text-gray-700">Compose Your Sentence</h1>
+                            <h1 class="text-xl font-bold text-gray-700">Sentence</h1>
                             <div id="student-trash-can" class="trash-can text-gray-400">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </div>
@@ -94,7 +93,7 @@
                 </div>
 
                 <!-- Instructor View -->
-                <div id="instructor-view" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div id="instructor-view" class="hidden view-panel grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div class="lg:col-span-2 space-y-8">
                         <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
                             <h1 class="text-xl font-bold text-gray-700">Create & Edit Sentence Template</h1>
@@ -143,6 +142,10 @@
                                 <label for="advanced-prompt-input" class="block text-sm font-medium text-gray-700">Advanced Mode Prompt</label>
                                 <textarea id="advanced-prompt-input" rows="6" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
                             </div>
+                        </div>
+                         <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
+                             <div id="user-info" class="text-sm text-gray-600"></div>
+                             <button id="logout-button" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Logout</button>
                         </div>
                     </div>
                     <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
@@ -247,20 +250,16 @@ Your entire response must be only the JSON object, starting with "{" and ending 
             const isCanvasEnvironment = typeof __app_id !== 'undefined';
 
             if (isCanvasEnvironment) {
-                // Bypass login for Canvas/debug environment
                 state.currentUser = { displayName: 'Debug User', uid: 'canvas-debug-user' };
                 authView.classList.add('hidden');
                 mainApp.classList.remove('hidden');
-                userInfo.textContent = `Signed in as ${state.currentUser.displayName}`;
                 initialize();
             } else {
-                // Standard Firebase Auth flow
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         state.currentUser = user;
                         authView.classList.add('hidden');
                         mainApp.classList.remove('hidden');
-                        userInfo.textContent = `Signed in as ${user.displayName}`;
                         initialize();
                         listenForSessions();
                     } else {
@@ -269,27 +268,35 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                         mainApp.classList.add('hidden');
                     }
                 });
-
                 loginButton.addEventListener('click', () => signInWithPopup(auth, provider).catch(error => console.error("Login failed:", error)));
             }
-
-            logoutButton.addEventListener('click', () => {
-                if (!isCanvasEnvironment) {
-                    signOut(auth).catch(error => console.error("Logout failed:", error));
-                } else {
-                    showModal("Logout is disabled in Debug Mode.");
-                }
-            });
             
+            // --- INITIALIZATION ---
             function initialize() {
                 switchTab('student'); 
                 guidedPromptInput.value = state.guidedSystemPrompt;
                 advancedPromptInput.value = state.advancedSystemPrompt;
                 render();
                 studentTabButton.addEventListener('click', () => switchTab('student'));
-                instructorTabButton.addEventListener('click', () => switchTab('instructor'));
-                xButton.addEventListener('click', resetCurrentSentence);
-                checkButton.addEventListener('click', handleCheckSentence);
+                
+                let pressTimer;
+                const startPress = (e) => {
+                    e.preventDefault(); // Prevent context menu on long press
+                    pressTimer = window.setTimeout(() => switchTab('instructor'), 3000);
+                };
+                const cancelPress = () => {
+                    clearTimeout(pressTimer);
+                };
+                instructorTabButton.addEventListener('mousedown', startPress);
+                instructorTabButton.addEventListener('mouseup', cancelPress);
+                instructorTabButton.addEventListener('mouseleave', cancelPress);
+                instructorTabButton.addEventListener('touchstart', startPress);
+                instructorTabButton.addEventListener('touchend', cancelPress);
+
+                // Double-click/tap handlers
+                setupDoubleClick(xButton, resetCurrentSentence);
+                setupDoubleClick(checkButton, handleCheckSentence);
+
                 speakButton.addEventListener('click', speakSentence);
                 generateButton.addEventListener('click', handleGenerateTemplate);
                 copyButton.addEventListener('click', () => handleCopy(studentSubmissionsArea.textContent));
@@ -305,8 +312,24 @@ Your entire response must be only the JSON object, starting with "{" and ending 
                 studentTrashCan.addEventListener('dragleave', () => studentTrashCan.classList.remove('drag-over'));
                 studentTrashCan.addEventListener('drop', handleDropToStudentTrash);
             }
+
+            function setupDoubleClick(element, callback) {
+                let lastTap = 0;
+                let timeout;
+                element.addEventListener('click', (event) => {
+                    const currentTime = new Date().getTime();
+                    const tapLength = currentTime - lastTap;
+                    clearTimeout(timeout);
+                    if (tapLength < 500 && tapLength > 0) {
+                        callback();
+                        event.preventDefault();
+                    }
+                    lastTap = currentTime;
+                });
+            }
             
             function render() {
+                userInfo.textContent = `Signed in as ${state.currentUser.displayName}`;
                 renderSentenceBox(); renderWordBank(); renderInstructorTemplate(); renderStudentSubmissions(); renderRevisedSubmissions(); updateUIState();
             }
 
@@ -479,14 +502,21 @@ Your entire response must be only the JSON object, starting with "{" and ending 
 
             function updateUIState() {
                 const hasSentence = state.composedSentence.length > 0;
-                speakButton.disabled = !hasSentence; checkButton.disabled = !hasSentence; xButton.disabled = !hasSentence;
+                speakButton.disabled = !hasSentence;
             }
 
             function switchTab(tabName) {
-                studentView.classList.toggle('hidden', tabName !== 'student');
-                instructorView.classList.toggle('hidden', tabName === 'student');
-                studentTabButton.classList.toggle('active', tabName === 'student');
-                instructorTabButton.classList.toggle('active', tabName !== 'student');
+                const isStudent = tabName === 'student';
+                studentView.classList.toggle('hidden', !isStudent);
+                instructorView.classList.toggle('hidden', isStudent);
+                studentTabButton.classList.toggle('active', isStudent);
+                instructorTabButton.classList.toggle('active', !isStudent);
+                
+                if (isStudent) {
+                    enterFullScreen();
+                } else {
+                    exitFullScreen();
+                }
                 render();
             }
 
@@ -637,6 +667,28 @@ Your entire response must be only the JSON object, starting with "{" and ending 
             function updateVocabLabel() {
                 const levels = { '1': '1st Grade', '2': '2nd Grade', '3': '3rd Grade', '4': '4th Grade', '5': '5th Grade' };
                 vocabLevelLabel.textContent = levels[vocabSlider.value];
+            }
+
+            // --- FULLSCREEN ---
+            function enterFullScreen() {
+                const elem = document.documentElement;
+                if (elem.requestFullscreen) {
+                    elem.requestFullscreen().catch(err => {
+                        console.log(`Fullscreen request failed: ${err.message}`);
+                    });
+                } else if (elem.webkitRequestFullscreen) { /* Safari */
+                    elem.webkitRequestFullscreen();
+                }
+            }
+
+            function exitFullScreen() {
+                if (document.fullscreenElement && document.exitFullscreen) {
+                    document.exitFullscreen().catch(err => {
+                        console.log(`Exit fullscreen failed: ${err.message}`);
+                    });
+                } else if (document.webkitFullscreenElement && document.webkitExitFullscreen) { /* Safari */
+                    document.webkitExitFullscreen();
+                }
             }
 
             // --- FIREBASE & SESSION MANAGEMENT ---
